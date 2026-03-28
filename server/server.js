@@ -21,6 +21,14 @@ app.use(express.json());
 app.use(express.static("public"));
 app.use("/uploads", express.static("uploads"));
 
+
+const fs = require("fs");
+
+// Create database folder if it doesn't exist
+if (!fs.existsSync("./database")) {
+  fs.mkdirSync("./database");
+}
+
 const db = new sqlite3.Database("./database/timeline.db");
 
 db.run(`
