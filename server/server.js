@@ -41,6 +41,28 @@ CREATE TABLE IF NOT EXISTS memories (
 )
 `);
 
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS memories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT,
+      description TEXT,
+      date TEXT,
+      image TEXT
+    )
+  `);
+
+  // Clear existing (so it resets clean)
+  db.run("DELETE FROM memories");
+
+  // Insert fake memories
+  db.run(`INSERT INTO memories (title, description, date, image) VALUES 
+    ('First Date 💕', 'We went out and laughed the whole night', '2024-01-10', null),
+    ('Movie Night 🍿', 'Watched our favorite movie together', '2024-02-14', null),
+    ('Beach Day 🌊', 'Spent the day at the beach, best vibes ever', '2024-03-05', null)
+  `);
+});
+
 
 // ✅ GET (allowed - view only)
 app.get("/memories", (req, res) => {
