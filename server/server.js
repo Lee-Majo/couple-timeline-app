@@ -1,22 +1,32 @@
 const express = require("express");
-const sqlite3 = require("sqlite3").verbose();
+const sqlite3 = require ("sqlite3").verbose();
 const cors = require("cors");
 const fs = require("fs");
+const multer = require("multer");
+const path = require("path");
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 app.use(express.static("public"));
+app.use("/uploads", express.static("uploads")); 
 
-// Ensure database folder exists
-if (!fs.existsSync("./database")) {
-  fs.mkdirSync("./database");
-}
+// Ensure uploads folder exists
+if (!fs.existsSync("./uploads")) fs.mkdirSync("./uploads");
 
+// Multer setup for image uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, "./uploads"),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, Date.now() + ext);
+  },
+});
+const upload = multer({ storage });
+
+// Database setup
+if (!fs.existsSync("./database")) fs.mkdirSync("./database");
 const db = new sqlite3.Database("./database/timeline.db");
-
-// Create table + insert demo data ONLY if empty
 db.serialize(() => {
   db.run(`
     CREATE TABLE IF NOT EXISTS memories (
@@ -27,45 +37,65 @@ db.serialize(() => {
       image TEXT
     )
   `);
-
-  // Check if table is empty
-  db.get("SELECT COUNT(*) as count FROM memories", (err, row) => {
-    if (row.count === 0) {
-      db.run(`INSERT INTO memories (title, description, date, image) VALUES 
-        ('First Date 💕', 'We went out and laughed the whole night', '2024-01-10', null),
-        ('Movie Night 🍿', 'Watched our favorite movie together', '2024-02-14', null),
-        ('Beach Day 🌊', 'Spent the day at the beach, best vibes ever', '2024-03-05', null)
-      `);
-    }
-  });
 });
 
+// --- LOGIN ROUTE ---
+const users = { lisel: "mypassword123", tatenda: "ourmemories" };
 
-// ✅ GET (allowed)
+app.post("/login", (req, res) => {
+  const username = req.body.username?.trim();
+  const password = req.body.password?.trim();
+
+  console.log("LOGIN ATTEMPT:", { username, password });
+
+  if (users[username] && users[username] === password) {
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ success: false });
+  }
+});
+
+// --- MEMORY ROUTES ---
 app.get("/memories", (req, res) => {
   db.all("SELECT * FROM memories ORDER BY date DESC", [], (err, rows) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
+    if (err) return res.status(500).json({ error: err.message });
     res.json(rows);
   });
 });
 
-// ❌ BLOCK everything else
-app.post("/memories", (req, res) => {
-  res.status(403).json({ message: "Not allowed" });
-});
+app.post("/memories", upload.single("image"), (req, res) => {
+  const { title, description, date } = req.body;
+  const image = req.file ? `/uploads/${req.file.filename}` : null;
 
-app.delete("/memories/:id", (req, res) => {
-  res.status(403).json({ message: "Not allowed" });
+  db.run(
+    "INSERT INTO memories (title, description, date, image) VALUES (?, ?, ?, ?)",
+    [title, description, date, image],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ id: this.lastID });
+    }
+  );
 });
 
 app.put("/memories/:id", (req, res) => {
-  res.status(403).json({ message: "Not allowed" });
+  const { title, description, date } = req.body;
+  db.run(
+    "UPDATE memories SET title=?, description=?, date=? WHERE id=?",
+    [title, description, date, req.params.id],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ message: "Updated" });
+    }
+  );
 });
 
-
-app.listen(3000, () => {
-  console.log("Server running on port 3000");
+app.delete("/memories/:id", (req, res) => {
+  db.run("DELETE FROM memories WHERE id=?", [req.params.id], function (err) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ message: "Deleted" });
+  });
 });
+
+// --- SERVER START ---
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
